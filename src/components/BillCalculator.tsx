@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 
 const BILLS = [
@@ -16,16 +16,28 @@ const BILLS = [
 const BillCalculator = ({ onTotalChange }: { onTotalChange: (total: number) => void }) => {
   const [counts, setCounts] = useState<{ [key: number]: number }>({});
 
-  const handleCountChange = (bill: number, count: string) => {
-    const newCount = parseInt(count) || 0;
-    const newCounts = { ...counts, [bill]: newCount };
-    setCounts(newCounts);
-    
-    const total = Object.entries(newCounts).reduce(
+  useEffect(() => {
+    const total = Object.entries(counts).reduce(
       (sum, [bill, count]) => sum + Number(bill) * count,
       0
     );
     onTotalChange(total);
+  }, [counts, onTotalChange]);
+
+  // Reset when total is set to 0 externally
+  useEffect(() => {
+    const total = Object.entries(counts).reduce(
+      (sum, [bill, count]) => sum + Number(bill) * count,
+      0
+    );
+    if (total > 0 && onTotalChange.toString().includes("setAmount(0)")) {
+      setCounts({});
+    }
+  }, [counts, onTotalChange]);
+
+  const handleCountChange = (bill: number, count: string) => {
+    const newCount = parseInt(count) || 0;
+    setCounts(prev => ({ ...prev, [bill]: newCount }));
   };
 
   return (

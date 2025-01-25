@@ -7,13 +7,14 @@ import { ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
 const CashRegister = () => {
-  const [balance, setBalance] = useState(0);
+  const [cashBalance, setCashBalance] = useState(0);
+  const [bankBalance, setBankBalance] = useState(0);
   const [amount, setAmount] = useState(0);
   const [comment, setComment] = useState("");
   const [transactions, setTransactions] = useState<any[]>([]);
   const { toast } = useToast();
 
-  const handleTransaction = (type: "deposit" | "withdrawal") => {
+  const handleTransaction = (type: "deposit" | "withdrawal", target: "cash" | "bank" = "cash") => {
     if (amount <= 0) {
       toast({
         title: "Fehler",
@@ -23,7 +24,7 @@ const CashRegister = () => {
       return;
     }
 
-    if (type === "withdrawal" && amount > balance) {
+    if (type === "withdrawal" && amount > cashBalance && target === "cash") {
       toast({
         title: "Fehler",
         description: "Nicht genügend Geld in der Kasse.",
@@ -36,28 +37,42 @@ const CashRegister = () => {
       id: Date.now(),
       amount,
       type,
-      comment: comment || (type === "deposit" ? "Einzahlung" : "Abhebung"),
+      target,
+      comment: comment || (type === "deposit" ? "Einzahlung" : `Abhebung (${target === "bank" ? "Bank" : "Bar"})`),
       timestamp: new Date(),
     };
 
     setTransactions([newTransaction, ...transactions]);
-    setBalance(type === "deposit" ? balance + amount : balance - amount);
+
+    if (target === "cash") {
+      setCashBalance(type === "deposit" ? cashBalance + amount : cashBalance - amount);
+    } else {
+      setBankBalance(bankBalance + amount);
+      setCashBalance(cashBalance - amount);
+    }
+
     setAmount(0);
     setComment("");
 
     toast({
       title: type === "deposit" ? "Einzahlung erfolgt" : "Abhebung erfolgt",
       description: `${amount.toFixed(2)}€ wurden ${
-        type === "deposit" ? "eingezahlt" : "abgehoben"
+        type === "deposit" ? "eingezahlt" : `abgehoben (${target === "bank" ? "zur Bank" : "Bar"})`
       }.`,
     });
   };
 
   return (
     <div className="space-y-6">
-      <div className="p-4 bg-white rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold text-gray-800 mb-4">Kassenstand</h2>
-        <p className="text-4xl font-bold text-primary">{balance.toFixed(2)}€</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="p-4 bg-white rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Kassenstand (Bar)</h2>
+          <p className="text-4xl font-bold text-primary">{cashBalance.toFixed(2)}€</p>
+        </div>
+        <div className="p-4 bg-white rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Kassenstand (Bank)</h2>
+          <p className="text-4xl font-bold text-primary">{bankBalance.toFixed(2)}€</p>
+        </div>
       </div>
 
       <BillCalculator onTotalChange={setAmount} />
@@ -93,7 +108,14 @@ const CashRegister = () => {
               className="flex-1 bg-primary hover:bg-primary-dark"
             >
               <ArrowDownCircle className="w-4 h-4 mr-2" />
-              Abheben
+              Bar abheben
+            </Button>
+            <Button
+              onClick={() => handleTransaction("withdrawal", "bank")}
+              className="flex-1 bg-blue-500 hover:bg-blue-600"
+            >
+              <ArrowDownCircle className="w-4 h-4 mr-2" />
+              Zur Bank
             </Button>
           </div>
         </div>

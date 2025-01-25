@@ -4,6 +4,7 @@ type Transaction = {
   id: number;
   amount: number;
   type: "deposit" | "withdrawal";
+  target: "cash" | "bank";
   comment: string;
   timestamp: Date;
 };
@@ -22,7 +23,7 @@ const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
               {transaction.type === "deposit" ? (
                 <ArrowUpCircle className="w-6 h-6 text-green-500" />
               ) : (
-                <ArrowDownCircle className="w-6 h-6 text-primary" />
+                <ArrowDownCircle className={`w-6 h-6 ${transaction.target === "bank" ? "text-blue-500" : "text-primary"}`} />
               )}
               <div>
                 <p className="font-medium">{transaction.comment}</p>
@@ -35,6 +36,8 @@ const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
               className={`font-bold ${
                 transaction.type === "deposit"
                   ? "text-green-500"
+                  : transaction.target === "bank"
+                  ? "text-blue-500"
                   : "text-primary"
               }`}
             >

@@ -59,7 +59,7 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
       .from('balances')
       .select('*')
       .eq('event_id', currentEvent.id)
-      .single();
+      .maybeSingle();
 
     if (error && error.code !== 'PGRST116') {
       toast({
@@ -77,11 +77,11 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
       // Initialize balances if they don't exist
       const { error: insertError } = await supabase
         .from('balances')
-        .insert([{ 
+        .upsert({ 
           event_id: currentEvent.id,
           cash_balance: 0,
           bank_balance: 0
-        }]);
+        });
 
       if (insertError) {
         toast({
@@ -89,6 +89,9 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
           description: "Fehler beim Initialisieren der Kontostände",
           variant: "destructive",
         });
+      } else {
+        setCashBalance(0);
+        setBankBalance(0);
       }
     }
   };

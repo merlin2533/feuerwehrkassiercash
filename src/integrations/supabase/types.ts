@@ -9,7 +9,94 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      balances: {
+        Row: {
+          bank_balance: number
+          cash_balance: number
+          event_id: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          bank_balance?: number
+          cash_balance?: number
+          event_id: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          bank_balance?: number
+          cash_balance?: number
+          event_id?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "balances_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      events: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          comment: string | null
+          created_at: string
+          event_id: string
+          id: string
+          target: string
+          type: string
+        }
+        Insert: {
+          amount: number
+          comment?: string | null
+          created_at?: string
+          event_id: string
+          id?: string
+          target: string
+          type: string
+        }
+        Update: {
+          amount?: number
+          comment?: string | null
+          created_at?: string
+          event_id?: string
+          id?: string
+          target?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

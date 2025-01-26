@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
@@ -7,17 +7,92 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
 
-const EventSelector = () => {
+export type Event = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+const EventSelector = ({ onEventChange }: { onEventChange: (event: Event) => void }) => {
   const [newEvent, setNewEvent] = useState("");
-  const [events, setEvents] = useState(["Sommerfest 2024"]);
-  const [selectedEvent, setSelectedEvent] = useState("Sommerfest 2024");
+  const [events, setEvents] = useState<Event[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const { toast } = useToast();
 
-  const handleAddEvent = () => {
+  useEffect(() => {
+    // Initial fetch of events
+    fetchEvents();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('events-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'events' },
+        (payload) => {
+          fetchEvents();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchEvents = async () => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      toast({
+        title: "Fehler",
+        description: "Fehler beim Laden der Veranstaltungen",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEvents(data);
+    if (data.length > 0 && !selectedEvent) {
+      setSelectedEvent(data[0]);
+      onEventChange(data[0]);
+    }
+  };
+
+  const handleAddEvent = async () => {
     if (newEvent.trim()) {
-      setEvents([...events, newEvent]);
-      setSelectedEvent(newEvent);
+      const { data, error } = await supabase
+        .from('events')
+        .insert([{ name: newEvent }])
+        .select()
+        .single();
+
+      if (error) {
+        toast({
+          title: "Fehler",
+          description: "Fehler beim Erstellen der Veranstaltung",
+          variant: "destructive",
+        });
+        return;
+      }
+
       setNewEvent("");
+      setSelectedEvent(data);
+      onEventChange(data);
+    }
+  };
+
+  const handleEventChange = (eventId: string) => {
+    const event = events.find((e) => e.id === eventId);
+    if (event) {
+      setSelectedEvent(event);
+      onEventChange(event);
     }
   };
 
@@ -25,12 +100,12 @@ const EventSelector = () => {
     <div className="flex items-center gap-2">
       <select
         className="h-10 rounded-md border border-input bg-background px-3 py-2"
-        value={selectedEvent}
-        onChange={(e) => setSelectedEvent(e.target.value)}
+        value={selectedEvent?.id || ""}
+        onChange={(e) => handleEventChange(e.target.value)}
       >
         {events.map((event) => (
-          <option key={event} value={event}>
-            {event}
+          <option key={event.id} value={event.id}>
+            {event.name}
           </option>
         ))}
       </select>

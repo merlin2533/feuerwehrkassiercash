@@ -1,7 +1,11 @@
+import { useState } from "react";
 import EventSelector from "@/components/EventSelector";
 import CashRegister from "@/components/CashRegister";
+import type { Event } from "@/components/EventSelector";
 
 const Index = () => {
+  const [currentEvent, setCurrentEvent] = useState<Event | null>(null);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
@@ -10,12 +14,12 @@ const Index = () => {
             <h1 className="text-2xl font-bold text-primary">
               Feuerwehr Kassenbuch
             </h1>
-            <EventSelector />
+            <EventSelector onEventChange={setCurrentEvent} />
           </div>
         </div>
       </header>
       <div className="container py-8 space-y-6">
-        <CashRegister />
+        {currentEvent && <CashRegister currentEvent={currentEvent} />}
       </div>
     </div>
   );

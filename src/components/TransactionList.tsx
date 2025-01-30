@@ -6,7 +6,7 @@ type Transaction = {
   type: "deposit" | "withdrawal";
   target: "cash" | "bank";
   comment: string;
-  timestamp: Date;
+  created_at: string; // Changed from timestamp to string since that's what Supabase returns
 };
 
 const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
@@ -28,7 +28,7 @@ const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
               <div>
                 <p className="font-medium">{transaction.comment}</p>
                 <p className="text-sm text-gray-500">
-                  {transaction.timestamp.toLocaleString()}
+                  {new Date(transaction.created_at).toLocaleString()}
                 </p>
               </div>
             </div>

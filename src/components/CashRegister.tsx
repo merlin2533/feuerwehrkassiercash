@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import BillCalculator from "./BillCalculator";
 import TransactionList from "./TransactionList";
+import TransactionExcel from "./TransactionExcel";
 import { ArrowUpCircle, ArrowDownCircle, Printer } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import type { Event } from "./EventSelector";
+import { saveTransactions, getTransactions, saveBalances, getBalances, type LocalBalance } from "@/utils/localStorage";
 
 const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
   const [cashBalance, setCashBalance] = useState(0);
@@ -20,102 +21,36 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
     if (currentEvent) {
       fetchBalances();
       fetchTransactions();
-
-      // Subscribe to realtime updates
-      const channel = supabase
-        .channel('db-changes')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'transactions' },
-          () => {
-            fetchBalances();
-            fetchTransactions();
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'balances' },
-          () => {
-            fetchBalances();
-          }
-        )
-        .subscribe();
-
-      // Refresh data every 15 seconds
-      const interval = setInterval(() => {
-        fetchBalances();
-        fetchTransactions();
-      }, 15000);
-
-      return () => {
-        supabase.removeChannel(channel);
-        clearInterval(interval);
-      };
     }
   }, [currentEvent]);
 
-  const fetchBalances = async () => {
-    const { data, error } = await supabase
-      .from('balances')
-      .select('*')
-      .eq('event_id', currentEvent.id)
-      .maybeSingle();
-
-    if (error && error.code !== 'PGRST116') {
-      toast({
-        title: "Fehler",
-        description: "Fehler beim Laden der Kontostände",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (data) {
-      setCashBalance(data.cash_balance);
-      setBankBalance(data.bank_balance);
+  const fetchBalances = () => {
+    const balances = getBalances();
+    const currentBalance = balances.find(b => b.event_id === currentEvent.id);
+    
+    if (currentBalance) {
+      setCashBalance(currentBalance.cash_balance);
+      setBankBalance(currentBalance.bank_balance);
     } else {
       // Initialize balances if they don't exist
-      const { error: insertError } = await supabase
-        .from('balances')
-        .upsert({ 
-          event_id: currentEvent.id,
-          cash_balance: 0,
-          bank_balance: 0
-        });
-
-      if (insertError) {
-        toast({
-          title: "Fehler",
-          description: "Fehler beim Initialisieren der Kontostände",
-          variant: "destructive",
-        });
-      } else {
-        setCashBalance(0);
-        setBankBalance(0);
-      }
+      const newBalances = [...balances, {
+        event_id: currentEvent.id,
+        cash_balance: 0,
+        bank_balance: 0
+      }];
+      saveBalances(newBalances);
+      setCashBalance(0);
+      setBankBalance(0);
     }
   };
 
-  const fetchTransactions = async () => {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('event_id', currentEvent.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast({
-        title: "Fehler",
-        description: "Fehler beim Laden der Transaktionen",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setTransactions(data);
+  const fetchTransactions = () => {
+    const allTransactions = getTransactions();
+    const eventTransactions = allTransactions.filter(t => t.event_id === currentEvent.id);
+    setTransactions(eventTransactions);
   };
 
-  const handleTransaction = async (type: "deposit" | "withdrawal", target: "cash" | "bank" = "cash") => {
+  const handleTransaction = (type: "deposit" | "withdrawal", target: "cash" | "bank" = "cash") => {
     if (amount <= 0) {
       toast({
         title: "Fehler",
@@ -134,58 +69,58 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
       return;
     }
 
-    // Insert transaction
-    const { error: transactionError } = await supabase
-      .from('transactions')
-      .insert([{
-        event_id: currentEvent.id,
-        amount,
-        type,
-        target,
-        comment: comment || (type === "deposit" ? "Einzahlung" : `Abhebung (${target === "bank" ? "Bank" : "Bar"})`)
-      }]);
+    // Create new transaction
+    const newTransaction = {
+      id: crypto.randomUUID(),
+      event_id: currentEvent.id,
+      amount,
+      type,
+      target,
+      comment: comment || (type === "deposit" ? "Einzahlung" : `Abhebung (${target === "bank" ? "Bank" : "Bar"})`),
+      created_at: new Date().toISOString()
+    };
 
-    if (transactionError) {
-      toast({
-        title: "Fehler",
-        description: "Fehler beim Speichern der Transaktion",
-        variant: "destructive",
-      });
-      return;
-    }
+    // Update transactions
+    const allTransactions = getTransactions();
+    const newTransactions = [...allTransactions, newTransaction];
+    saveTransactions(newTransactions);
 
     // Update balances
+    const balances = getBalances();
+    const currentBalance = balances.find(b => b.event_id === currentEvent.id);
     const newCashBalance = target === "cash"
       ? type === "deposit" 
-        ? cashBalance + amount 
-        : cashBalance - amount
+        ? (currentBalance?.cash_balance || 0) + amount 
+        : (currentBalance?.cash_balance || 0) - amount
       : type === "withdrawal"
-        ? cashBalance - amount
-        : cashBalance;
+        ? (currentBalance?.cash_balance || 0) - amount
+        : (currentBalance?.cash_balance || 0);
 
     const newBankBalance = target === "bank"
-      ? bankBalance + amount
-      : bankBalance;
+      ? (currentBalance?.bank_balance || 0) + amount
+      : (currentBalance?.bank_balance || 0);
 
-    const { error: balanceError } = await supabase
-      .from('balances')
-      .upsert({
+    const newBalances = balances.map(b => 
+      b.event_id === currentEvent.id 
+        ? { ...b, cash_balance: newCashBalance, bank_balance: newBankBalance }
+        : b
+    );
+
+    if (!currentBalance) {
+      newBalances.push({
         event_id: currentEvent.id,
         cash_balance: newCashBalance,
         bank_balance: newBankBalance
       });
-
-    if (balanceError) {
-      toast({
-        title: "Fehler",
-        description: "Fehler beim Aktualisieren der Kontostände",
-        variant: "destructive",
-      });
-      return;
     }
 
+    saveBalances(newBalances);
+
+    // Update state
     setAmount(0);
     setComment("");
+    fetchBalances();
+    fetchTransactions();
 
     toast({
       title: type === "deposit" ? "Einzahlung erfolgt" : "Abhebung erfolgt",
@@ -193,6 +128,61 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
         type === "deposit" ? "eingezahlt" : `abgehoben (${target === "bank" ? "Bank" : "Bar"})`
       }.`,
     });
+  };
+
+  const handleImportTransactions = (importedTransactions: any[]) => {
+    const allTransactions = getTransactions();
+    const newTransactions = [
+      ...allTransactions,
+      ...importedTransactions.map(t => ({
+        ...t,
+        event_id: currentEvent.id
+      }))
+    ];
+    
+    saveTransactions(newTransactions);
+    fetchTransactions();
+    
+    // Recalculate balances
+    let newCashBalance = 0;
+    let newBankBalance = 0;
+    
+    newTransactions
+      .filter(t => t.event_id === currentEvent.id)
+      .forEach(t => {
+        if (t.type === "deposit") {
+          if (t.target === "cash") {
+            newCashBalance += t.amount;
+          } else {
+            newBankBalance += t.amount;
+          }
+        } else {
+          if (t.target === "cash") {
+            newCashBalance -= t.amount;
+          } else if (t.target === "bank") {
+            newBankBalance += t.amount;
+            newCashBalance -= t.amount;
+          }
+        }
+      });
+
+    const balances = getBalances();
+    const newBalances = balances.map(b => 
+      b.event_id === currentEvent.id 
+        ? { ...b, cash_balance: newCashBalance, bank_balance: newBankBalance }
+        : b
+    );
+
+    if (!balances.find(b => b.event_id === currentEvent.id)) {
+      newBalances.push({
+        event_id: currentEvent.id,
+        cash_balance: newCashBalance,
+        bank_balance: newBankBalance
+      });
+    }
+
+    saveBalances(newBalances);
+    fetchBalances();
   };
 
   const handlePrint = () => {
@@ -271,10 +261,16 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
             <p className="text-4xl font-bold text-primary">{bankBalance.toFixed(2)}€</p>
           </div>
         </div>
-        <Button onClick={handlePrint} className="ml-4">
-          <Printer className="w-4 h-4 mr-2" />
-          Drucken
-        </Button>
+        <div className="flex gap-2">
+          <TransactionExcel 
+            transactions={transactions} 
+            onImport={handleImportTransactions} 
+          />
+          <Button onClick={handlePrint}>
+            <Printer className="w-4 h-4 mr-2" />
+            Drucken
+          </Button>
+        </div>
       </div>
 
       <BillCalculator onTotalChange={setAmount} />

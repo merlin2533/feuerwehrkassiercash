@@ -1,7 +1,8 @@
 import { ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
 export type Transaction = {
-  id: number;
+  id: string;
+  event_id: string;
   amount: number;
   type: "deposit" | "withdrawal";
   target: "cash" | "bank";

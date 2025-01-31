@@ -50,6 +50,7 @@ const TransactionExcel = ({ transactions, onImport }: TransactionExcelProps) => 
 
       const newTransactions: Transaction[] = jsonData.map((row: any) => ({
         id: crypto.randomUUID(),
+        event_id: "", // This will be set by the parent component
         type: row.Typ === "Einzahlung" ? "deposit" : "withdrawal",
         target: row.Ziel === "Bank" ? "bank" : "cash",
         amount: Number(row.Betrag),

@@ -1,12 +1,12 @@
 import { ArrowUpCircle, ArrowDownCircle } from "lucide-react";
 
-type Transaction = {
+export type Transaction = {
   id: number;
   amount: number;
   type: "deposit" | "withdrawal";
   target: "cash" | "bank";
   comment: string;
-  created_at: string; // Changed from timestamp to string since that's what Supabase returns
+  created_at: string;
 };
 
 const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {

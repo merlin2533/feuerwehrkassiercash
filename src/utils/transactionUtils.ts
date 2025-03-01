@@ -63,7 +63,38 @@ export const processDeposit = (
   if (currentBalance) {
     const updatedRegisters = currentBalance.registers.map(register => {
       if (register.id === sourceRegisterId) {
-        return { ...register, balance: register.balance + amount };
+        // Update register denominations
+        let updatedDenominations = register.denominations || [];
+        
+        if (denominations && denominations.length > 0) {
+          // Create a map of existing denominations
+          const denominationMap = new Map<number, Denomination>();
+          updatedDenominations.forEach(d => denominationMap.set(d.value, d));
+          
+          // Update or add new denominations
+          denominations.forEach(d => {
+            if (d.count > 0) {
+              const existing = denominationMap.get(d.value);
+              if (existing) {
+                denominationMap.set(d.value, {
+                  value: d.value,
+                  count: existing.count + d.count
+                });
+              } else {
+                denominationMap.set(d.value, d);
+              }
+            }
+          });
+          
+          // Convert map back to array
+          updatedDenominations = Array.from(denominationMap.values());
+        }
+        
+        return { 
+          ...register, 
+          balance: register.balance + amount,
+          denominations: updatedDenominations
+        };
       }
       return register;
     });
@@ -140,10 +171,44 @@ export const processWithdrawal = (
   const currentBalance = balances.find(b => b.event_id === event.id);
   
   if (currentBalance) {
-    // Update source register
+    // Update source register (reduce denominations based on withdrawal)
     let updatedRegisters = currentBalance.registers.map(register => {
       if (register.id === sourceRegisterId) {
-        return { ...register, balance: register.balance - amount };
+        // Update register denominations
+        let updatedDenominations = register.denominations || [];
+        
+        if (denominations && denominations.length > 0) {
+          // Create a map of existing denominations
+          const denominationMap = new Map<number, Denomination>();
+          updatedDenominations.forEach(d => denominationMap.set(d.value, d));
+          
+          // Reduce denominations based on withdrawal
+          denominations.forEach(d => {
+            if (d.count > 0) {
+              const existing = denominationMap.get(d.value);
+              if (existing) {
+                const newCount = existing.count - d.count;
+                if (newCount > 0) {
+                  denominationMap.set(d.value, {
+                    value: d.value,
+                    count: newCount
+                  });
+                } else {
+                  denominationMap.delete(d.value);
+                }
+              }
+            }
+          });
+          
+          // Convert map back to array
+          updatedDenominations = Array.from(denominationMap.values());
+        }
+        
+        return { 
+          ...register, 
+          balance: register.balance - amount,
+          denominations: updatedDenominations 
+        };
       }
       return register;
     });
@@ -152,7 +217,38 @@ export const processWithdrawal = (
     if (targetRegisterId) {
       updatedRegisters = updatedRegisters.map(register => {
         if (register.id === targetRegisterId) {
-          return { ...register, balance: register.balance + amount };
+          // Update target register denominations
+          let updatedDenominations = register.denominations || [];
+          
+          if (denominations && denominations.length > 0) {
+            // Create a map of existing denominations
+            const denominationMap = new Map<number, Denomination>();
+            updatedDenominations.forEach(d => denominationMap.set(d.value, d));
+            
+            // Add denominations to target
+            denominations.forEach(d => {
+              if (d.count > 0) {
+                const existing = denominationMap.get(d.value);
+                if (existing) {
+                  denominationMap.set(d.value, {
+                    value: d.value,
+                    count: existing.count + d.count
+                  });
+                } else {
+                  denominationMap.set(d.value, d);
+                }
+              }
+            });
+            
+            // Convert map back to array
+            updatedDenominations = Array.from(denominationMap.values());
+          }
+          
+          return { 
+            ...register, 
+            balance: register.balance + amount,
+            denominations: updatedDenominations 
+          };
         }
         return register;
       });
@@ -258,11 +354,50 @@ export const recalculateBalances = (
   // Create a copy of registers to update
   const updatedRegisters = [...currentBalance.registers];
   let newBankBalance = 0; // Start with zero and recalculate
-  
-  // Reset all balances to zero first
+
+  // Reset all balances and denominations to zero first
   for (let i = 0; i < updatedRegisters.length; i++) {
-    updatedRegisters[i] = { ...updatedRegisters[i], balance: 0 };
+    updatedRegisters[i] = { 
+      ...updatedRegisters[i], 
+      balance: 0,
+      denominations: [] 
+    };
   }
+  
+  // Helper function to update register denominations
+  const updateRegisterDenominations = (
+    register: CashRegisterBalance,
+    transactionDenominations: Denomination[],
+    isAddition: boolean
+  ) => {
+    // Create a map of existing denominations
+    const denominationMap = new Map<number, Denomination>();
+    (register.denominations || []).forEach(d => denominationMap.set(d.value, { ...d }));
+    
+    // Update denominations
+    transactionDenominations.forEach(d => {
+      const existing = denominationMap.get(d.value);
+      if (existing) {
+        const newCount = isAddition
+          ? existing.count + d.count
+          : Math.max(0, existing.count - d.count);
+        
+        if (newCount > 0) {
+          denominationMap.set(d.value, {
+            value: d.value,
+            count: newCount
+          });
+        } else {
+          denominationMap.delete(d.value);
+        }
+      } else if (isAddition) {
+        denominationMap.set(d.value, { ...d });
+      }
+    });
+    
+    // Convert map back to array
+    return Array.from(denominationMap.values());
+  };
   
   // Recalculate from all transactions
   allTransactions
@@ -275,7 +410,17 @@ export const recalculateBalances = (
         );
         
         if (registerIndex >= 0) {
+          const register = updatedRegisters[registerIndex];
           updatedRegisters[registerIndex].balance += t.amount;
+          
+          // Update denominations if available
+          if (t.denominations && t.denominations.length > 0) {
+            updatedRegisters[registerIndex].denominations = updateRegisterDenominations(
+              register,
+              t.denominations,
+              true // Add denominations
+            );
+          }
         }
       } else { // withdrawal
         // Find source register by name
@@ -284,7 +429,17 @@ export const recalculateBalances = (
         );
         
         if (sourceRegisterIndex >= 0) {
+          const register = updatedRegisters[sourceRegisterIndex];
           updatedRegisters[sourceRegisterIndex].balance -= t.amount;
+          
+          // Update denominations if available
+          if (t.denominations && t.denominations.length > 0) {
+            updatedRegisters[sourceRegisterIndex].denominations = updateRegisterDenominations(
+              register,
+              t.denominations,
+              false // Subtract denominations
+            );
+          }
         }
         
         // If target is bank, update bank balance
@@ -297,7 +452,17 @@ export const recalculateBalances = (
           );
           
           if (targetRegisterIndex >= 0) {
+            const register = updatedRegisters[targetRegisterIndex];
             updatedRegisters[targetRegisterIndex].balance += t.amount;
+            
+            // Update denominations if available
+            if (t.denominations && t.denominations.length > 0) {
+              updatedRegisters[targetRegisterIndex].denominations = updateRegisterDenominations(
+                register,
+                t.denominations,
+                true // Add denominations
+              );
+            }
           }
         }
       }

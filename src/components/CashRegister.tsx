@@ -1,149 +1,83 @@
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Printer, RefreshCw, Settings } from "lucide-react";
-import { 
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogTrigger
-} from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/components/ui/use-toast";
 import BalanceDisplay from "./BalanceDisplay";
-import TransactionForm from "./TransactionForm";
 import TransactionList from "./TransactionList";
-import TransactionExcel from "./TransactionExcel";
+import TransactionForm from "./TransactionForm";
+import RegisterSelector from "./RegisterSelector";
 import RegisterManager from "./RegisterManager";
+import TransactionExcel from "./TransactionExcel";
+import { Button } from "./ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import { getTransactions, getBalances, saveBalances, DEFAULT_REGISTERS, resetEvent } from "@/utils/localStorage";
+import { processDeposit, processWithdrawal, deleteTransaction, updateTransaction } from "@/utils/transactionUtils";
 import type { Event } from "./EventSelector";
 import type { Transaction } from "./TransactionList";
-import type { Denomination } from "@/types/models";
-import { 
-  saveTransactions, 
-  getTransactions, 
-  saveBalances, 
-  getBalances, 
-  DEFAULT_REGISTERS,
-  getCustomRegisters,
-  saveCustomRegisters,
-  resetEvent,
-  type LocalBalance,
-  type CashRegisterBalance
-} from "@/utils/localStorage";
-import {
-  processDeposit,
-  processWithdrawal,
-  recalculateBalances,
-  deleteTransaction,
-  updateTransaction
-} from "@/utils/transactionUtils";
+import { useToast } from "@/components/ui/use-toast";
+import { ChevronDown, ChevronUp, Settings, Upload, Download, RefreshCcw } from "lucide-react";
 
-const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
-  const [registers, setRegisters] = useState<CashRegisterBalance[]>([]);
-  const [bankBalance, setBankBalance] = useState(0);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+interface CashRegisterProps {
+  currentEvent: Event;
+}
+
+const CashRegister = ({ currentEvent }: CashRegisterProps) => {
   const { toast } = useToast();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [registers, setRegisters] = useState(DEFAULT_REGISTERS);
+  const [bankBalance, setBankBalance] = useState(0);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [isTransactionFormCollapsed, setIsTransactionFormCollapsed] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  // Load data when event changes
   useEffect(() => {
-    if (currentEvent) {
-      fetchBalances();
-      fetchTransactions();
-    }
+    loadData();
   }, [currentEvent]);
 
-  const fetchBalances = () => {
+  const loadData = () => {
+    // Get transactions for current event
+    const allTransactions = getTransactions();
+    const eventTransactions = allTransactions.filter(t => t.event_id === currentEvent.id);
+    setTransactions(eventTransactions);
+
+    // Get or initialize balances for current event
     const balances = getBalances();
     const currentBalance = balances.find(b => b.event_id === currentEvent.id);
-    
-    // Get custom registers or use defaults
-    const customRegisters = getCustomRegisters();
-    const baseRegisters = customRegisters.length > 0 ? customRegisters : DEFAULT_REGISTERS;
-    
+
     if (currentBalance) {
-      // Make sure our current balance includes all registers (including newly added ones)
-      const existingRegisterIds = currentBalance.registers.map(r => r.id);
-      const newRegisters = baseRegisters.filter(r => !existingRegisterIds.includes(r.id));
-      
-      if (newRegisters.length > 0) {
-        // We need to add the new registers to the current balance
-        const updatedRegisters = [...currentBalance.registers, ...newRegisters];
-        const updatedBalances = balances.map(b => 
-          b.event_id === currentEvent.id 
-            ? { ...b, registers: updatedRegisters }
-            : b
-        );
-        saveBalances(updatedBalances);
-        setRegisters(updatedRegisters);
-      } else {
-        setRegisters(currentBalance.registers);
-      }
-      
+      setRegisters(currentBalance.registers);
       setBankBalance(currentBalance.bank_balance);
     } else {
-      // Initialize balances if they don't exist
-      const newBalance: LocalBalance = {
+      // Initialize new balance record for this event
+      const newBalance = {
         event_id: currentEvent.id,
-        registers: [...baseRegisters],
+        registers: DEFAULT_REGISTERS,
         bank_balance: 0
       };
-      const newBalances = [...balances, newBalance];
-      saveBalances(newBalances);
-      setRegisters(newBalance.registers);
+      saveBalances([...balances, newBalance]);
+      setRegisters(DEFAULT_REGISTERS);
       setBankBalance(0);
     }
   };
 
-  const fetchTransactions = () => {
-    const allTransactions = getTransactions();
-    const eventTransactions = allTransactions.filter(t => t.event_id === currentEvent.id);
-    setTransactions(eventTransactions);
-  };
-
-  const handleDeposit = (
-    amount: number, 
-    sourceRegisterId: string, 
-    comment: string, 
-    denominations?: Denomination[]
-  ) => {
-    if (amount <= 0) {
-      toast({
-        title: "Fehler",
-        description: "Bitte geben Sie einen gültigen Betrag ein.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!sourceRegisterId) {
-      toast({
-        title: "Fehler",
-        description: "Bitte wählen Sie eine Kasse aus.",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  // Handle deposit
+  const handleDeposit = (amount: number, registerId: string, comment: string, denominations?: any[]) => {
     const result = processDeposit(
       currentEvent,
       amount,
-      sourceRegisterId,
+      registerId,
       comment,
       registers,
       denominations
     );
 
     if (result.success) {
-      fetchBalances();
-      fetchTransactions();
       toast({
-        title: "Einzahlung erfolgt",
+        title: "Einzahlung erfolgreich",
         description: result.message,
       });
+
+      // Update local state
+      loadData();
     } else {
       toast({
         title: "Fehler",
@@ -153,51 +87,15 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
     }
   };
 
+  // Handle withdrawal
   const handleWithdrawal = (
-    amount: number, 
-    sourceRegisterId: string, 
-    targetRegisterId: string | null, 
-    toBank: boolean, 
+    amount: number,
+    sourceRegisterId: string,
+    targetRegisterId: string | null,
+    toBank: boolean,
     comment: string,
-    denominations?: Denomination[]
+    denominations?: any[]
   ) => {
-    if (amount <= 0) {
-      toast({
-        title: "Fehler",
-        description: "Bitte geben Sie einen gültigen Betrag ein.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!sourceRegisterId) {
-      toast({
-        title: "Fehler",
-        description: "Bitte wählen Sie eine Kasse aus.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // For transfer between registers
-    if (!toBank && sourceRegisterId === targetRegisterId) {
-      toast({
-        title: "Fehler",
-        description: "Quell- und Zielkasse können nicht identisch sein.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!toBank && !targetRegisterId) {
-      toast({
-        title: "Fehler",
-        description: "Bitte wählen Sie eine Zielkasse aus.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const result = processWithdrawal(
       currentEvent,
       amount,
@@ -210,12 +108,13 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
     );
 
     if (result.success) {
-      fetchBalances();
-      fetchTransactions();
       toast({
-        title: "Abhebung erfolgt",
+        title: "Auszahlung erfolgreich",
         description: result.message,
       });
+
+      // Update local state
+      loadData();
     } else {
       toast({
         title: "Fehler",
@@ -225,99 +124,24 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
     }
   };
 
-  const handleImportTransactions = (importedTransactions: Transaction[]) => {
-    const allTransactions = getTransactions();
-    const newTransactions = [
-      ...allTransactions,
-      ...importedTransactions.map(t => ({
-        ...t,
-        event_id: currentEvent.id
-      }))
-    ];
-    
-    saveTransactions(newTransactions);
-    
-    // Recalculate balances
-    const balances = getBalances();
-    const result = recalculateBalances(currentEvent, balances);
-    
-    if (result.success) {
-      fetchTransactions();
-      fetchBalances();
-      toast({
-        title: "Import erfolgreich",
-        description: `${importedTransactions.length} Transaktionen wurden importiert.`,
-      });
-    } else {
-      toast({
-        title: "Fehler beim Import",
-        description: result.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleUpdateCustomRegisters = (updatedRegisters: CashRegisterBalance[]) => {
-    saveCustomRegisters(updatedRegisters);
-    
-    // Update the event's registers as well
-    const balances = getBalances();
-    const currentBalance = balances.find(b => b.event_id === currentEvent.id);
-    
-    if (currentBalance) {
-      // Preserve balances for existing registers
-      const mergedRegisters = updatedRegisters.map(newReg => {
-        const existingReg = currentBalance.registers.find(r => r.id === newReg.id);
-        return existingReg ? existingReg : newReg;
-      });
-      
-      const newBalances = balances.map(b => 
-        b.event_id === currentEvent.id 
-          ? { ...b, registers: mergedRegisters }
-          : b
-      );
-      
-      saveBalances(newBalances);
-      setRegisters(mergedRegisters);
-    }
-  };
-
-  const handleResetEvent = () => {
-    if (resetEvent(currentEvent.id)) {
-      fetchBalances();
-      fetchTransactions();
-      setIsResetDialogOpen(false);
-      toast({
-        title: "Veranstaltung zurückgesetzt",
-        description: "Alle Transaktionen und Salden wurden gelöscht.",
-      });
-    } else {
-      toast({
-        title: "Fehler",
-        description: "Fehler beim Zurücksetzen der Veranstaltung.",
-        variant: "destructive",
-      });
-    }
-  };
-
+  // Handle edit transaction
   const handleEditTransaction = (transaction: Transaction) => {
     setEditingTransaction(transaction);
+    setIsTransactionFormCollapsed(false); // Expand the form when editing
   };
 
+  // Handle update transaction
   const handleUpdateTransaction = (updatedTransaction: Transaction) => {
-    const result = updateTransaction(
-      editingTransaction!,
-      updatedTransaction
-    );
-    
+    const result = updateTransaction(editingTransaction!, updatedTransaction);
+
     if (result.success) {
-      fetchBalances();
-      fetchTransactions();
-      setEditingTransaction(null);
       toast({
         title: "Transaktion aktualisiert",
         description: result.message,
       });
+
+      setEditingTransaction(null);
+      loadData();
     } else {
       toast({
         title: "Fehler",
@@ -327,203 +151,150 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
     }
   };
 
+  // Handle delete transaction
   const handleDeleteTransaction = (transactionId: string) => {
-    const result = deleteTransaction(currentEvent.id, transactionId);
+    const confirmDelete = window.confirm("Möchten Sie diese Transaktion wirklich löschen?");
     
-    if (result.success) {
-      fetchBalances();
-      fetchTransactions();
-      toast({
-        title: "Transaktion gelöscht",
-        description: result.message,
-      });
-    } else {
-      toast({
-        title: "Fehler",
-        description: result.message,
-        variant: "destructive",
-      });
+    if (confirmDelete) {
+      const result = deleteTransaction(currentEvent.id, transactionId);
+
+      if (result.success) {
+        toast({
+          title: "Transaktion gelöscht",
+          description: result.message,
+        });
+
+        loadData();
+      } else {
+        toast({
+          title: "Fehler",
+          description: result.message,
+          variant: "destructive",
+        });
+      }
     }
   };
 
-  const handlePrint = () => {
-    const printContent = `
-      Kassenbericht - ${currentEvent.name}
-      Datum: ${new Date().toLocaleString()}
+  // Handle reset event
+  const handleResetEvent = () => {
+    const confirmReset = window.confirm(
+      "Möchten Sie wirklich alle Transaktionen und Kassenstände für diese Veranstaltung zurücksetzen? Diese Aktion kann nicht rückgängig gemacht werden."
+    );
+    
+    if (confirmReset) {
+      const success = resetEvent(currentEvent.id);
       
-      Kassenbestände:
-      ${registers.map(r => `${r.name}: ${r.balance.toFixed(2)}€`).join('\n')}
-      Kassenstand (Bank): ${bankBalance.toFixed(2)}€
-      
-      Transaktionen:
-      ${transactions
-        .map(
-          (t) => {
-            let transactionText = `${new Date(t.created_at).toLocaleString()} - ${
-              t.type === "deposit" ? "Einzahlung" : "Abhebung"
-            } (${t.target}): ${
-              t.type === "deposit" ? "+" : "-"
-            }${t.amount.toFixed(2)}€ ${t.comment ? `- ${t.comment}` : ""}`;
-            
-            if (t.denominations && t.denominations.length > 0) {
-              transactionText += `\nStückelung: ${t.denominations.map(
-                d => `${d.count}x ${d.value >= 1 ? `${d.value}€` : `${d.value * 100}¢`}`
-              ).join(", ")}`;
-            }
-            
-            return transactionText;
-          }
-        )
-        .join("\n\n")}
-    `;
-
-    const printWindow = window.open("", "", "height=600,width=800");
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Kassenbericht - ${currentEvent.name}</title>
-            <style>
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              h1 { margin-bottom: 20px; }
-              .balance { margin: 10px 0; font-size: 18px; }
-              .transactions { margin-top: 20px; }
-              .transaction { margin: 15px 0; }
-              .denomination { margin-top: 5px; font-size: 14px; color: #666; }
-            </style>
-          </head>
-          <body>
-            <h1>Kassenbericht - ${currentEvent.name}</h1>
-            <div>
-              <h2>Kassenbestände:</h2>
-              ${registers.map(
-                (r) => `<div class="balance">${r.name}: ${r.balance.toFixed(2)}€</div>`
-              ).join("")}
-              <div class="balance">Kassenstand (Bank): ${bankBalance.toFixed(2)}€</div>
-            </div>
-            <div class="transactions">
-              <h2>Transaktionen:</h2>
-              ${transactions
-                .map(
-                  (t) => `
-                  <div class="transaction">
-                    ${new Date(t.created_at).toLocaleString()} - 
-                    ${t.type === "deposit" ? "Einzahlung" : "Abhebung"}
-                    (${t.target}): 
-                    ${t.type === "deposit" ? "+" : "-"}${t.amount.toFixed(2)}€
-                    ${t.comment ? `- ${t.comment}` : ""}
-                    ${t.denominations && t.denominations.length > 0 
-                      ? `<div class="denomination">Stückelung: ${t.denominations.map(
-                          d => `${d.count}x ${d.value >= 1 ? `${d.value}€` : `${d.value * 100}¢`}`
-                        ).join(", ")}</div>` 
-                      : ""
-                    }
-                  </div>
-                `
-                )
-                .join("")}
-            </div>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-      printWindow.print();
+      if (success) {
+        toast({
+          title: "Veranstaltung zurückgesetzt",
+          description: "Alle Transaktionen und Kassenstände wurden zurückgesetzt.",
+        });
+        
+        loadData();
+      } else {
+        toast({
+          title: "Fehler",
+          description: "Beim Zurücksetzen der Veranstaltung ist ein Fehler aufgetreten.",
+          variant: "destructive",
+        });
+      }
     }
+  };
+
+  // Handle register update
+  const handleRegisterUpdate = (updatedRegisters: any[]) => {
+    // Update balances with new registers
+    const balances = getBalances();
+    const updatedBalances = balances.map(b => {
+      if (b.event_id === currentEvent.id) {
+        return {
+          ...b,
+          registers: updatedRegisters
+        };
+      }
+      return b;
+    });
+    
+    saveBalances(updatedBalances);
+    setRegisters(updatedRegisters);
+    
+    toast({
+      title: "Kassen aktualisiert",
+      description: "Die Kassenliste wurde erfolgreich aktualisiert.",
+    });
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center flex-wrap gap-4">
-        <BalanceDisplay registers={registers} bankBalance={bankBalance} />
-        <div className="flex gap-2 flex-wrap">
+      <div className="flex justify-between items-center">
+        <h2 className="text-3xl font-bold text-primary">
+          {currentEvent.name}
+        </h2>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            <Settings className="w-4 h-4 mr-1" />
+            Einstellungen
+          </Button>
           <TransactionExcel 
             transactions={transactions} 
-            onImport={handleImportTransactions} 
+            registers={registers}
+            buttonIcon={<Download className="w-4 h-4 mr-1" />} 
           />
-          <Button onClick={handlePrint} variant="outline">
-            <Printer className="w-4 h-4 mr-2" />
-            Drucken
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleResetEvent}
+          >
+            <RefreshCcw className="w-4 h-4 mr-1" />
+            Zurücksetzen
           </Button>
-          <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Settings className="w-4 h-4 mr-2" />
-                Einstellungen
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Einstellungen</DialogTitle>
-              </DialogHeader>
-              <Tabs defaultValue="registers">
-                <TabsList className="grid grid-cols-2">
-                  <TabsTrigger value="registers">Kassen verwalten</TabsTrigger>
-                  <TabsTrigger value="reset">Veranstaltung zurücksetzen</TabsTrigger>
-                </TabsList>
-                <TabsContent value="registers">
-                  <RegisterManager 
-                    registers={getCustomRegisters().length ? getCustomRegisters() : DEFAULT_REGISTERS} 
-                    onUpdateRegisters={handleUpdateCustomRegisters} 
-                  />
-                </TabsContent>
-                <TabsContent value="reset">
-                  <div className="p-4 bg-white rounded-lg space-y-4">
-                    <h2 className="text-2xl font-bold text-gray-800">Veranstaltung zurücksetzen</h2>
-                    <p className="text-red-500">
-                      Achtung: Alle Transaktionen und Salden dieser Veranstaltung werden unwiderruflich gelöscht.
-                    </p>
-                    <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="destructive" className="mt-4">
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          Veranstaltung zurücksetzen
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Veranstaltung wirklich zurücksetzen?</DialogTitle>
-                        </DialogHeader>
-                        <p className="py-4">
-                          Alle Transaktionen und Salden für "{currentEvent.name}" werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.
-                        </p>
-                        <DialogFooter>
-                          <Button 
-                            variant="outline" 
-                            onClick={() => setIsResetDialogOpen(false)}
-                          >
-                            Abbrechen
-                          </Button>
-                          <Button 
-                            variant="destructive" 
-                            onClick={handleResetEvent}
-                          >
-                            Ja, zurücksetzen
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
-      <TransactionForm 
-        registers={registers}
-        onDeposit={handleDeposit}
-        onWithdraw={handleWithdrawal}
-        editingTransaction={editingTransaction}
-        onCancelEdit={() => setEditingTransaction(null)}
-        onUpdateTransaction={handleUpdateTransaction}
-      />
+      <BalanceDisplay registers={registers} bankBalance={bankBalance} />
+
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-4 cursor-pointer"
+          onClick={() => setIsTransactionFormCollapsed(prev => !prev)}
+        >
+          <h2 className="text-2xl font-bold text-gray-800">Buchung</h2>
+          {isTransactionFormCollapsed ? (
+            <ChevronDown className="h-6 w-6 text-gray-500" />
+          ) : (
+            <ChevronUp className="h-6 w-6 text-gray-500" />
+          )}
+        </div>
+        
+        {!isTransactionFormCollapsed && (
+          <TransactionForm
+            registers={registers}
+            onDeposit={handleDeposit}
+            onWithdrawal={handleWithdrawal}
+            editingTransaction={editingTransaction}
+            onUpdateTransaction={handleUpdateTransaction}
+            onCancelEdit={() => setEditingTransaction(null)}
+          />
+        )}
+      </div>
 
       <TransactionList 
-        transactions={transactions} 
+        transactions={transactions}
         onEditTransaction={handleEditTransaction}
         onDeleteTransaction={handleDeleteTransaction}
       />
+
+      {isSettingsOpen && (
+        <RegisterManager
+          registers={registers}
+          onUpdateRegisters={handleRegisterUpdate}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 };

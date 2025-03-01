@@ -1,11 +1,12 @@
-
 import type { Event } from "@/components/EventSelector";
 import type { Transaction } from "@/components/TransactionList";
+import type { Denomination } from "@/types/models";
 
 export interface CashRegisterBalance {
   id: string;
   name: string;
   balance: number;
+  denominations?: Denomination[];
 }
 
 export interface LocalBalance {
@@ -54,16 +55,16 @@ export const getCustomRegisters = (): CashRegisterBalance[] => {
 
 // Default cash registers
 export const DEFAULT_REGISTERS = [
-  { id: "bar1", name: "Bar 1", balance: 0 },
-  { id: "bar2", name: "Bar 2", balance: 0 },
-  { id: "bar3", name: "Bar 3", balance: 0 },
-  { id: "bar4", name: "Bar 4", balance: 0 },
-  { id: "karten", name: "Karten", balance: 0 },
-  { id: "bierstand", name: "Bierstand", balance: 0 },
-  { id: "essenstand", name: "Essenstand", balance: 0 },
-  { id: "alkoholfrei", name: "Alkoholfrei", balance: 0 },
-  { id: "gardarobe", name: "Gardarobe", balance: 0 },
-  { id: "kassier", name: "Kassier", balance: 0 }
+  { id: "bar1", name: "Bar 1", balance: 0, denominations: [] },
+  { id: "bar2", name: "Bar 2", balance: 0, denominations: [] },
+  { id: "bar3", name: "Bar 3", balance: 0, denominations: [] },
+  { id: "bar4", name: "Bar 4", balance: 0, denominations: [] },
+  { id: "karten", name: "Karten", balance: 0, denominations: [] },
+  { id: "bierstand", name: "Bierstand", balance: 0, denominations: [] },
+  { id: "essenstand", name: "Essenstand", balance: 0, denominations: [] },
+  { id: "alkoholfrei", name: "Alkoholfrei", balance: 0, denominations: [] },
+  { id: "gardarobe", name: "Gardarobe", balance: 0, denominations: [] },
+  { id: "kassier", name: "Kassier", balance: 0, denominations: [] }
 ];
 
 // Reset event data
@@ -78,10 +79,11 @@ export const resetEvent = (eventId: string): boolean => {
     const allBalances = getBalances();
     const updatedBalances = allBalances.map(balance => {
       if (balance.event_id === eventId) {
-        // Reset register balances to 0
+        // Reset register balances to 0 and clear denominations
         const resetRegisters = balance.registers.map(register => ({
           ...register,
-          balance: 0
+          balance: 0,
+          denominations: []
         }));
         
         return {

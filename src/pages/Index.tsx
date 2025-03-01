@@ -1,7 +1,12 @@
+
 import { useState } from "react";
 import EventSelector from "@/components/EventSelector";
 import CashRegister from "@/components/CashRegister";
 import type { Event } from "@/components/EventSelector";
+import { Button } from "@/components/ui/button";
+import { Settings, Upload, Download } from "lucide-react";
+import TransactionExcel from "@/components/TransactionExcel";
+import { getTransactions } from "@/utils/localStorage";
 
 const Index = () => {
   const [currentEvent, setCurrentEvent] = useState<Event | null>(null);
@@ -14,7 +19,19 @@ const Index = () => {
             <h1 className="text-2xl font-bold text-primary">
               Feuerwehr Kassenbuch
             </h1>
-            <EventSelector onEventChange={setCurrentEvent} />
+            <div className="flex items-center gap-2">
+              <EventSelector onEventChange={setCurrentEvent} />
+              {currentEvent && (
+                <TransactionExcel 
+                  transactions={getTransactions().filter(t => t.event_id === currentEvent.id)}
+                  registers={[]}
+                  buttonIcon={<Download className="w-4 h-4 mr-1" />}
+                  variant="outline"
+                  size="sm"
+                  className="ml-2"
+                />
+              )}
+            </div>
           </div>
         </div>
       </header>

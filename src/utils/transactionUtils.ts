@@ -15,7 +15,7 @@ export const createTransaction = (
   comment: string
 ): Transaction => {
   return {
-    id: crypto.randomUUID(),
+    id: crypto.randomUUID(), // Using the Web Crypto API instead of uuid
     event_id: eventId,
     amount,
     type,

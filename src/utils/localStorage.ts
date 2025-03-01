@@ -1,4 +1,3 @@
-
 import type { Event } from "@/components/EventSelector";
 import type { Transaction } from "@/components/TransactionList";
 

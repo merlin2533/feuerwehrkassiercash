@@ -7,6 +7,7 @@ export type Transaction = {
   amount: number;
   type: "deposit" | "withdrawal";
   target: string; // Changed from "cash" | "bank" to allow for multiple cash registers
+  source?: string; // Adding source to track where money came from
   comment: string;
   created_at: string;
 };
@@ -59,6 +60,17 @@ const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
                 <p className="text-sm text-gray-500">
                   {new Date(transaction.created_at).toLocaleString()}
                 </p>
+                {transaction.source && transaction.type === "withdrawal" && (
+                  <p className="text-xs text-gray-600">
+                    Von: <span className={getTargetColor(transaction.source)}>{transaction.source}</span> → 
+                    Nach: <span className={getTargetColor(transaction.target)}>{transaction.target}</span>
+                  </p>
+                )}
+                {transaction.type === "deposit" && (
+                  <p className="text-xs text-gray-600">
+                    Eingezahlt in: <span className={getTargetColor(transaction.target)}>{transaction.target}</span>
+                  </p>
+                )}
               </div>
             </div>
             <span

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -197,6 +196,7 @@ const CashRegister = ({ currentEvent }: { currentEvent: Event }) => {
       event_id: currentEvent.id,
       amount,
       type: "withdrawal" as const,
+      source: sourceRegister?.name,
       target,
       comment: comment || `Abhebung (${target})`,
       created_at: new Date().toISOString()

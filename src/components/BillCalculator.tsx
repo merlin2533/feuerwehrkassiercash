@@ -1,20 +1,21 @@
+
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
+import { DEFAULT_DENOMINATIONS } from "@/types/models";
+import type { Denomination, DenominationCount } from "@/types/models";
 
-const BILLS = [
-  { value: 500, label: "500€" },
-  { value: 200, label: "200€" },
-  { value: 100, label: "100€" },
-  { value: 50, label: "50€" },
-  { value: 20, label: "20€" },
-  { value: 10, label: "10€" },
-  { value: 5, label: "5€" },
-  { value: 2, label: "2€" },
-  { value: 1, label: "1€" },
-];
+interface BillCalculatorProps { 
+  onTotalChange: (total: number) => void;
+  onDenominationsChange?: (denominations: Denomination[]) => void;
+  initialDenominations?: DenominationCount;
+}
 
-const BillCalculator = ({ onTotalChange }: { onTotalChange: (total: number) => void }) => {
-  const [counts, setCounts] = useState<{ [key: number]: number }>({});
+const BillCalculator = ({ 
+  onTotalChange, 
+  onDenominationsChange,
+  initialDenominations = {}
+}: BillCalculatorProps) => {
+  const [counts, setCounts] = useState<DenominationCount>(initialDenominations);
 
   useEffect(() => {
     const total = Object.entries(counts).reduce(
@@ -22,7 +23,17 @@ const BillCalculator = ({ onTotalChange }: { onTotalChange: (total: number) => v
       0
     );
     onTotalChange(total);
-  }, [counts, onTotalChange]);
+
+    if (onDenominationsChange) {
+      const denominations = Object.entries(counts)
+        .filter(([_, count]) => count > 0)
+        .map(([value, count]) => ({
+          value: Number(value),
+          count
+        }));
+      onDenominationsChange(denominations);
+    }
+  }, [counts, onTotalChange, onDenominationsChange]);
 
   // Reset when total is set to 0 externally
   useEffect(() => {
@@ -43,7 +54,7 @@ const BillCalculator = ({ onTotalChange }: { onTotalChange: (total: number) => v
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-white rounded-lg shadow-md">
       <h2 className="text-2xl font-bold text-gray-800 col-span-full">Scheinrechner</h2>
-      {BILLS.map(({ value, label }) => (
+      {DEFAULT_DENOMINATIONS.map(({ value, label }) => (
         <div key={value} className="flex items-center gap-2">
           <label className="w-16 font-medium">{label}</label>
           <Input

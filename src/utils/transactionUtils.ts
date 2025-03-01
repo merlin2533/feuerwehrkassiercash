@@ -1,8 +1,8 @@
 
-import { v4 as uuidv4 } from 'uuid';
 import type { Transaction } from "@/components/TransactionList";
 import type { Event } from "@/components/EventSelector";
 import type { CashRegisterBalance, LocalBalance } from "@/utils/localStorage";
+import type { Denomination } from "@/types/models";
 import { getTransactions, saveTransactions, getBalances, saveBalances } from "@/utils/localStorage";
 
 // Create a new transaction
@@ -12,17 +12,19 @@ export const createTransaction = (
   type: "deposit" | "withdrawal",
   source: string | null,
   target: string,
-  comment: string
+  comment: string,
+  denominations?: Denomination[]
 ): Transaction => {
   return {
-    id: crypto.randomUUID(), // Using the Web Crypto API instead of uuid
+    id: crypto.randomUUID(),
     event_id: eventId,
     amount,
     type,
     ...(source && { source }),
     target,
     comment: comment || (type === "deposit" ? "Einzahlung" : `Abhebung (${target})`),
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    ...(denominations && { denominations })
   };
 };
 
@@ -32,7 +34,8 @@ export const processDeposit = (
   amount: number,
   sourceRegisterId: string,
   comment: string,
-  registers: CashRegisterBalance[]
+  registers: CashRegisterBalance[],
+  denominations?: Denomination[]
 ) => {
   const sourceRegister = registers.find(r => r.id === sourceRegisterId);
   if (!sourceRegister) return { success: false, message: "Kasse nicht gefunden." };
@@ -44,7 +47,8 @@ export const processDeposit = (
     "deposit",
     null,
     sourceRegister.name,
-    comment
+    comment,
+    denominations
   );
 
   // Update transactions
@@ -89,7 +93,8 @@ export const processWithdrawal = (
   targetRegisterId: string | null,
   toBank: boolean,
   comment: string,
-  registers: CashRegisterBalance[]
+  registers: CashRegisterBalance[],
+  denominations?: Denomination[]
 ) => {
   const sourceRegister = registers.find(r => r.id === sourceRegisterId);
   
@@ -121,7 +126,8 @@ export const processWithdrawal = (
     "withdrawal",
     sourceRegister.name,
     target,
-    comment
+    comment,
+    denominations
   );
 
   // Update transactions
@@ -173,6 +179,68 @@ export const processWithdrawal = (
   }
   
   return { success: false, message: "Fehler beim Aktualisieren der Salden." };
+};
+
+// Delete a transaction
+export const deleteTransaction = (
+  eventId: string,
+  transactionId: string
+) => {
+  // Get all transactions
+  const allTransactions = getTransactions();
+  const transactionToDelete = allTransactions.find(t => t.id === transactionId);
+  
+  if (!transactionToDelete) {
+    return { success: false, message: "Transaktion nicht gefunden." };
+  }
+  
+  // Remove the transaction
+  const newTransactions = allTransactions.filter(t => t.id !== transactionId);
+  saveTransactions(newTransactions);
+  
+  // Recalculate balances
+  const balances = getBalances();
+  const result = recalculateBalances({ id: eventId } as Event, balances);
+  
+  if (result.success) {
+    return {
+      success: true,
+      message: "Transaktion erfolgreich gelöscht.",
+      updatedBalances: result.updatedBalances
+    };
+  }
+  
+  return { success: false, message: "Fehler beim Neuberechnen der Salden." };
+};
+
+// Update a transaction
+export const updateTransaction = (
+  originalTransaction: Transaction,
+  updatedTransaction: Transaction
+) => {
+  // Get all transactions
+  const allTransactions = getTransactions();
+  
+  // Update the transaction
+  const newTransactions = allTransactions.map(t => 
+    t.id === updatedTransaction.id ? updatedTransaction : t
+  );
+  
+  saveTransactions(newTransactions);
+  
+  // Recalculate balances
+  const balances = getBalances();
+  const result = recalculateBalances({ id: updatedTransaction.event_id } as Event, balances);
+  
+  if (result.success) {
+    return {
+      success: true,
+      message: "Transaktion erfolgreich aktualisiert.",
+      updatedBalances: result.updatedBalances
+    };
+  }
+  
+  return { success: false, message: "Fehler beim Neuberechnen der Salden." };
 };
 
 // Recalculate balances from transactions

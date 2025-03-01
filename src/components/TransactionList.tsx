@@ -1,18 +1,30 @@
 
-import { ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Edit, Trash } from "lucide-react";
+import type { Denomination } from "@/types/models";
 
 export type Transaction = {
   id: string;
   event_id: string;
   amount: number;
   type: "deposit" | "withdrawal";
-  target: string; // Changed from "cash" | "bank" to allow for multiple cash registers
-  source?: string; // Adding source to track where money came from
+  target: string; 
+  source?: string;
   comment: string;
   created_at: string;
+  denominations?: Denomination[];
 };
 
-const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
+interface TransactionListProps {
+  transactions: Transaction[];
+  onEditTransaction?: (transaction: Transaction) => void;
+  onDeleteTransaction?: (transactionId: string) => void;
+}
+
+const TransactionList = ({ 
+  transactions, 
+  onEditTransaction, 
+  onDeleteTransaction 
+}: TransactionListProps) => {
   // Helper function to get color based on transaction target
   const getTargetColor = (target: string) => {
     switch (target) {
@@ -71,18 +83,52 @@ const TransactionList = ({ transactions }: { transactions: Transaction[] }) => {
                     Eingezahlt in: <span className={getTargetColor(transaction.target)}>{transaction.target}</span>
                   </p>
                 )}
+                {transaction.denominations && transaction.denominations.length > 0 && (
+                  <div className="mt-1 text-xs text-gray-500">
+                    <span className="font-medium">Stückelung: </span>
+                    {transaction.denominations.map((d, index) => (
+                      <span key={d.value}>
+                        {d.count}x {d.value >= 1 ? `${d.value}€` : `${d.value * 100}¢`}
+                        {index < transaction.denominations!.length - 1 ? ", " : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-            <span
-              className={`font-bold ${
-                transaction.type === "deposit"
-                  ? "text-green-500"
-                  : getTargetColor(transaction.target)
-              }`}
-            >
-              {transaction.type === "deposit" ? "+" : "-"}
-              {transaction.amount.toFixed(2)}€
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`font-bold ${
+                  transaction.type === "deposit"
+                    ? "text-green-500"
+                    : getTargetColor(transaction.target)
+                }`}
+              >
+                {transaction.type === "deposit" ? "+" : "-"}
+                {transaction.amount.toFixed(2)}€
+              </span>
+              
+              {(onEditTransaction || onDeleteTransaction) && (
+                <div className="flex gap-1">
+                  {onEditTransaction && (
+                    <button 
+                      onClick={() => onEditTransaction(transaction)}
+                      className="p-1 text-gray-500 hover:text-blue-500"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                  )}
+                  {onDeleteTransaction && (
+                    <button 
+                      onClick={() => onDeleteTransaction(transaction.id)}
+                      className="p-1 text-gray-500 hover:text-red-500"
+                    >
+                      <Trash className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>

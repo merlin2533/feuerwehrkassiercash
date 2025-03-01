@@ -6,6 +6,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Download, Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import type { Transaction } from "./TransactionList";
+import { DEFAULT_DENOMINATIONS } from "@/types/models";
 
 interface TransactionExcelProps {
   transactions: Transaction[];
@@ -17,15 +18,36 @@ const TransactionExcel = ({ transactions, onImport }: TransactionExcelProps) => 
   const [importing, setImporting] = useState(false);
 
   const handleExport = () => {
+    // Create denomination column headers 
+    const denominationHeaders = DEFAULT_DENOMINATIONS.map(d => 
+      d.value >= 1 ? `${d.value}€` : `${d.value * 100}¢`
+    );
+    
     const worksheet = XLSX.utils.json_to_sheet(
-      transactions.map(t => ({
-        Datum: new Date(t.created_at).toLocaleString(),
-        Typ: t.type === "deposit" ? "Einzahlung" : "Abhebung",
-        Quelle: t.type === "deposit" ? t.target : "-",
-        Ziel: t.type === "withdrawal" ? t.target : "-",
-        Betrag: t.amount,
-        Kommentar: t.comment || ""
-      }))
+      transactions.map(t => {
+        // Create base transaction data
+        const baseData = {
+          Datum: new Date(t.created_at).toLocaleString(),
+          Typ: t.type === "deposit" ? "Einzahlung" : "Abhebung",
+          Quelle: t.type === "deposit" ? "-" : t.source || "-",
+          Ziel: t.type === "withdrawal" ? t.target : "-",
+          Betrag: t.amount,
+          Kommentar: t.comment || ""
+        };
+        
+        // Add denomination data if available
+        const denominationData: Record<string, number> = {};
+        
+        if (t.denominations && t.denominations.length > 0) {
+          t.denominations.forEach(d => {
+            const key = d.value >= 1 ? `${d.value}€` : `${d.value * 100}¢`;
+            denominationData[key] = d.count;
+          });
+        }
+        
+        // Combine base data with denomination data
+        return { ...baseData, ...denominationData };
+      })
     );
 
     const workbook = XLSX.utils.book_new();
@@ -50,15 +72,48 @@ const TransactionExcel = ({ transactions, onImport }: TransactionExcelProps) => 
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-      const newTransactions: Transaction[] = jsonData.map((row: any) => ({
-        id: crypto.randomUUID(),
-        event_id: "", // This will be set by the parent component
-        type: row.Typ === "Einzahlung" ? "deposit" : "withdrawal",
-        target: row.Typ === "Einzahlung" ? row.Quelle : row.Ziel,
-        amount: Number(row.Betrag),
-        comment: row.Kommentar || "",
-        created_at: new Date().toISOString()
-      }));
+      const newTransactions: Transaction[] = jsonData.map((row: any) => {
+        // Parse basic transaction data
+        const transaction: Transaction = {
+          id: crypto.randomUUID(),
+          event_id: "", // This will be set by the parent component
+          type: row.Typ === "Einzahlung" ? "deposit" : "withdrawal",
+          target: row.Typ === "Einzahlung" ? row.Quelle : row.Ziel,
+          source: row.Typ === "Abhebung" ? row.Quelle : undefined,
+          amount: Number(row.Betrag),
+          comment: row.Kommentar || "",
+          created_at: new Date().toISOString(),
+          denominations: []
+        };
+        
+        // Parse denomination data if available
+        const possibleDenominations = DEFAULT_DENOMINATIONS.map(d => 
+          d.value >= 1 ? `${d.value}€` : `${d.value * 100}¢`
+        );
+        
+        const denominations = possibleDenominations
+          .filter(key => row[key] && Number(row[key]) > 0)
+          .map(key => {
+            // Convert key back to value (remove € or ¢ and convert)
+            let value: number;
+            if (key.endsWith('€')) {
+              value = parseFloat(key.replace('€', ''));
+            } else {
+              value = parseFloat(key.replace('¢', '')) / 100;
+            }
+            
+            return {
+              value,
+              count: Number(row[key])
+            };
+          });
+        
+        if (denominations.length > 0) {
+          transaction.denominations = denominations;
+        }
+        
+        return transaction;
+      });
 
       onImport(newTransactions);
       

@@ -1,137 +1,123 @@
+
 import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Plus } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/components/ui/use-toast";
+import { getEvents, saveEvents } from "@/utils/localStorage";
 
-export type Event = {
+export interface Event {
   id: string;
   name: string;
   created_at: string;
-};
+}
 
-const EventSelector = ({ onEventChange }: { onEventChange: (event: Event) => void }) => {
-  const [newEvent, setNewEvent] = useState("");
+interface EventSelectorProps {
+  onEventChange: (event: Event) => void;
+}
+
+const EventSelector = ({ onEventChange }: EventSelectorProps) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const { toast } = useToast();
+  const [newEventName, setNewEventName] = useState("");
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    // Initial fetch of events
-    fetchEvents();
-
-    // Subscribe to realtime updates
-    const channel = supabase
-      .channel('events-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'events' },
-        (payload) => {
-          fetchEvents();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    loadEvents();
   }, []);
 
-  const fetchEvents = async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast({
-        title: "Fehler",
-        description: "Fehler beim Laden der Veranstaltungen",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setEvents(data);
-    if (data.length > 0 && !selectedEvent) {
-      setSelectedEvent(data[0]);
-      onEventChange(data[0]);
+  const loadEvents = () => {
+    const storedEvents = getEvents();
+    setEvents(storedEvents);
+    
+    // Set the first event as the selected event by default if none is selected
+    if (storedEvents.length > 0 && !selectedEvent) {
+      setSelectedEvent(storedEvents[0]);
+      onEventChange(storedEvents[0]);
     }
   };
 
-  const handleAddEvent = async () => {
-    if (newEvent.trim()) {
-      const { data, error } = await supabase
-        .from('events')
-        .insert([{ name: newEvent }])
-        .select()
-        .single();
-
-      if (error) {
-        toast({
-          title: "Fehler",
-          description: "Fehler beim Erstellen der Veranstaltung",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setNewEvent("");
-      setSelectedEvent(data);
-      onEventChange(data);
-    }
+  const handleCreateEvent = () => {
+    if (!newEventName.trim()) return;
+    
+    const newEvent: Event = {
+      id: crypto.randomUUID(),
+      name: newEventName,
+      created_at: new Date().toISOString(),
+    };
+    
+    const updatedEvents = [...events, newEvent];
+    saveEvents(updatedEvents);
+    setEvents(updatedEvents);
+    setSelectedEvent(newEvent);
+    onEventChange(newEvent);
+    setNewEventName("");
+    setOpen(false);
   };
 
-  const handleEventChange = (eventId: string) => {
-    const event = events.find((e) => e.id === eventId);
-    if (event) {
-      setSelectedEvent(event);
-      onEventChange(event);
-    }
+  const handleSelectEvent = (event: Event) => {
+    setSelectedEvent(event);
+    onEventChange(event);
   };
 
   return (
     <div className="flex items-center gap-2">
+      <div className="font-medium">Veranstaltung:</div>
       <select
-        className="h-10 rounded-md border border-input bg-background px-3 py-2"
+        className="border rounded px-2 py-1 min-w-[200px]"
         value={selectedEvent?.id || ""}
-        onChange={(e) => handleEventChange(e.target.value)}
+        onChange={(e) => {
+          const event = events.find((ev) => ev.id === e.target.value);
+          if (event) handleSelectEvent(event);
+        }}
       >
+        {events.length === 0 && (
+          <option value="" disabled>
+            Keine Veranstaltungen
+          </option>
+        )}
         {events.map((event) => (
           <option key={event.id} value={event.id}>
             {event.name}
           </option>
         ))}
       </select>
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button size="icon" variant="outline">
-            <Plus className="h-4 w-4" />
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Plus className="w-4 h-4 mr-1" />
+            Neu
           </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80">
-          <div className="space-y-2">
-            <h4 className="font-medium">Neue Veranstaltung</h4>
-            <div className="flex gap-2">
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Neue Veranstaltung erstellen</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
               <Input
-                value={newEvent}
-                onChange={(e) => setNewEvent(e.target.value)}
+                id="name"
                 placeholder="Name der Veranstaltung"
+                value={newEventName}
+                onChange={(e) => setNewEventName(e.target.value)}
               />
-              <Button onClick={handleAddEvent}>
-                <Plus className="w-4 h-4 mr-2" />
-                Hinzufügen
-              </Button>
             </div>
           </div>
-        </PopoverContent>
-      </Popover>
+          <DialogFooter>
+            <Button onClick={handleCreateEvent}>Erstellen</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,8 @@ const TransactionExcel = ({ transactions, onImport }: TransactionExcelProps) => 
       transactions.map(t => ({
         Datum: new Date(t.created_at).toLocaleString(),
         Typ: t.type === "deposit" ? "Einzahlung" : "Abhebung",
-        Ziel: t.target === "bank" ? "Bank" : "Bar",
+        Quelle: t.type === "deposit" ? t.target : "-",
+        Ziel: t.type === "withdrawal" ? t.target : "-",
         Betrag: t.amount,
         Kommentar: t.comment || ""
       }))
@@ -52,7 +54,7 @@ const TransactionExcel = ({ transactions, onImport }: TransactionExcelProps) => 
         id: crypto.randomUUID(),
         event_id: "", // This will be set by the parent component
         type: row.Typ === "Einzahlung" ? "deposit" : "withdrawal",
-        target: row.Ziel === "Bank" ? "bank" : "cash",
+        target: row.Typ === "Einzahlung" ? row.Quelle : row.Ziel,
         amount: Number(row.Betrag),
         comment: row.Kommentar || "",
         created_at: new Date().toISOString()
